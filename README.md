@@ -38,15 +38,12 @@ The module adds **Recently edited** to the sort selectors on:
 - the admin item browse page (`/admin/item`);
 - the admin item advanced search page (`/admin/item/search`).
 
-Both controls submit Omeka's native `sort_by=modified` query parameter. Omeka
-S 4.1.1 already supports this field in item API searches, so the same sorting
-is available through:
+Both controls submit Omeka's native `sort_by=modified` query parameter.
 
 ```text
 /api/items?sort_by=modified&sort_order=desc
 ```
 
-No API override is required.
 
 ## Used terms in item advanced search
 
