@@ -8,4 +8,9 @@ return [
             Form\ConfigForm::class => Form\ConfigForm::class,
         ],
     ],
+    'service_manager' => [
+        'factories' => [
+            UsedTermCache::class => Service\UsedTermCacheFactory::class,
+        ],
+    ],
 ];

@@ -11,6 +11,8 @@ use Laminas\ServiceManager\ServiceLocatorInterface;
 use Laminas\View\Renderer\PhpRenderer;
 use Omeka\Form\Element\PropertySelect;
 use Omeka\Form\Element\ResourceClassSelect;
+use Omeka\Api\Adapter\AbstractAdapter;
+use Omeka\Api\Adapter\AbstractResourceEntityAdapter;
 use Omeka\Module\AbstractModule;
 use EditingExtensions\Form\ConfigForm;
 
@@ -46,6 +48,21 @@ class Module extends AbstractModule
                 [$this, 'restrictAdvancedSearchToUsedTerms']
             );
         }
+
+        foreach ([
+            'api.create.post',
+            'api.batch_create.post',
+            'api.update.post',
+            'api.batch_update.post',
+            'api.delete.post',
+            'api.batch_delete.post',
+        ] as $eventName) {
+            $sharedEventManager->attach(
+                AbstractAdapter::class,
+                $eventName,
+                [$this, 'invalidateUsedTermCache']
+            );
+        }
     }
 
     public function install(ServiceLocatorInterface $services): void
@@ -76,6 +93,7 @@ class Module extends AbstractModule
         $settings = $services->get('Omeka\Settings');
         $settings->delete(self::SETTING_RECENTLY_EDITED_SORT);
         $settings->delete(self::SETTING_USED_TERMS_SEARCH);
+        $settings->delete(UsedTermCache::SETTING_KEY);
     }
 
     public function getConfigForm(PhpRenderer $renderer): string
@@ -148,9 +166,28 @@ class Module extends AbstractModule
             return;
         }
 
+        /** @var UsedTermCache $usedTermCache */
+        $usedTermCache = $this->getServiceLocator()->get(UsedTermCache::class);
+        $target = $event->getTarget();
+        $usedIds = $target instanceof PropertySelect
+            ? $usedTermCache->getPropertyIds()
+            : $usedTermCache->getResourceClassIds();
+
         $query = $event->getParam('query', []);
-        $query['used'] = true;
+        unset($query['used']);
+        $query['id'] = $this->intersectIds($query['id'] ?? null, $usedIds);
         $event->setParam('query', $query);
+    }
+
+    public function invalidateUsedTermCache(Event $event): void
+    {
+        if (!$event->getTarget() instanceof AbstractResourceEntityAdapter) {
+            return;
+        }
+
+        $this->getServiceLocator()
+            ->get(UsedTermCache::class)
+            ->invalidate();
     }
 
     private function featureIsEnabled(string $setting): bool
@@ -158,6 +195,26 @@ class Module extends AbstractModule
         return (bool) $this->getServiceLocator()
             ->get('Omeka\Settings')
             ->get($setting, true);
+    }
+
+    private function intersectIds($queryIds, array $usedIds): array
+    {
+        if ($queryIds === null) {
+            return $usedIds ?: [0];
+        }
+
+        if (is_string($queryIds)) {
+            $queryIds = explode(',', $queryIds);
+        } elseif (!is_array($queryIds)) {
+            $queryIds = [$queryIds];
+        }
+        $queryIds = array_values(array_unique(array_filter(
+            array_map('intval', $queryIds),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        $ids = array_values(array_intersect($queryIds, $usedIds));
+        return $ids ?: [0];
     }
 
     private function isAdminItemAdvancedSearchRequest(): bool
