@@ -58,6 +58,9 @@ Omeka's normal property and class queries. The cache is built lazily and
 invalidated after successful resource create, update, batch, and delete API
 operations. This avoids repeating Omeka's `used=true` joins and grouping over
 the full value and resource tables every time the search form is rendered.
+An existing search criterion remains available in its own selector even when
+that property or class is currently unused, so refining and resubmitting a
+search cannot silently remove the criterion.
 
 ## Configuration
 

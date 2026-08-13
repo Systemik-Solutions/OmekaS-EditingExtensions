@@ -175,7 +175,11 @@ class Module extends AbstractModule
 
         $query = $event->getParam('query', []);
         unset($query['used']);
-        $query['id'] = $this->intersectIds($query['id'] ?? null, $usedIds);
+        $query['id'] = $this->intersectIds(
+            $query['id'] ?? null,
+            $usedIds,
+            $target->getValue()
+        );
         $event->setParam('query', $query);
     }
 
@@ -197,24 +201,45 @@ class Module extends AbstractModule
             ->get($setting, true);
     }
 
-    private function intersectIds($queryIds, array $usedIds): array
+    private function intersectIds(
+        $queryIds,
+        array $usedIds,
+        $selectedIds = null
+    ): array
     {
+        $selectedIds = $this->normaliseIds($selectedIds);
+
         if ($queryIds === null) {
-            return $usedIds ?: [0];
+            $ids = $usedIds;
+        } else {
+            $ids = array_values(array_intersect(
+                $this->normaliseIds($queryIds),
+                $usedIds
+            ));
         }
 
-        if (is_string($queryIds)) {
-            $queryIds = explode(',', $queryIds);
-        } elseif (!is_array($queryIds)) {
-            $queryIds = [$queryIds];
+        // A round-tripped search may contain an unused property or class.
+        // Keep that element's current selection available so submitting the
+        // advanced search form cannot silently discard the criterion.
+        $ids = array_values(array_unique(array_merge($ids, $selectedIds)));
+        return $ids ?: [0];
+    }
+
+    private function normaliseIds($ids): array
+    {
+        if ($ids === null) {
+            return [];
         }
-        $queryIds = array_values(array_unique(array_filter(
-            array_map('intval', $queryIds),
+        if (is_string($ids)) {
+            $ids = explode(',', $ids);
+        } elseif (!is_array($ids)) {
+            $ids = [$ids];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map('intval', $ids),
             static fn (int $id): bool => $id > 0
         )));
-
-        $ids = array_values(array_intersect($queryIds, $usedIds));
-        return $ids ?: [0];
     }
 
     private function isAdminItemAdvancedSearchRequest(): bool
