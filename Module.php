@@ -154,7 +154,9 @@ class Module extends AbstractModule
         }
 
         $sortConfig = $event->getParam('sortConfig', []);
-        $sortConfig['modified'] = 'Recently edited'; // @translate
+        if (!array_key_exists('modified', $sortConfig)) {
+            $sortConfig['modified'] = 'Recently edited'; // @translate
+        }
         $event->setParam('sortConfig', $sortConfig);
     }
 

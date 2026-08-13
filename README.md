@@ -48,6 +48,10 @@ is available through:
 
 No API override is required.
 
+If the administrator has already configured Omeka's **Modified** browse column,
+the module retains that column's header—including a custom header—instead of
+replacing it with **Recently edited**.
+
 ## Used terms in item advanced search
 
 On the admin item advanced search page, the property and resource class
