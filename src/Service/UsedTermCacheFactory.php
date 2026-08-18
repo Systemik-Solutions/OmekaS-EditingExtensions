@@ -14,8 +14,7 @@ class UsedTermCacheFactory implements FactoryInterface
         ?array $options = null
     ): UsedTermCache {
         return new UsedTermCache(
-            $container->get('Omeka\Connection'),
-            $container->get('Omeka\Settings')
+            $container->get('Omeka\Connection')
         );
     }
 }

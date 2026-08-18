@@ -20,6 +20,8 @@ class Module extends AbstractModule
 {
     public const SETTING_RECENTLY_EDITED_SORT = 'EditingExtensions_recently_edited_sort';
     public const SETTING_USED_TERMS_SEARCH = 'EditingExtensions_used_terms_search';
+    public const USED_TERM_CACHE_TABLE = 'editing_extensions_used_term_cache';
+    public const LEGACY_USED_TERM_CACHE_SETTING = 'EditingExtensions_used_term_ids';
 
     public function getConfig(): array
     {
@@ -70,6 +72,7 @@ class Module extends AbstractModule
         $settings = $services->get('Omeka\Settings');
         $settings->set(self::SETTING_RECENTLY_EDITED_SORT, true);
         $settings->set(self::SETTING_USED_TERMS_SEARCH, true);
+        $this->createUsedTermCacheTable($services);
     }
 
     public function upgrade(
@@ -86,6 +89,15 @@ class Module extends AbstractModule
                 $settings->set(self::SETTING_USED_TERMS_SEARCH, true);
             }
         }
+        if (version_compare($oldVersion, '1.2.3', '<')) {
+            $this->createUsedTermCacheTable($services);
+            // Remove the previous settings-backed cache directly. Using the
+            // settings service here would retain the same snapshot-dependent
+            // deletion behaviour this migration is intended to eliminate.
+            $services->get('Omeka\Connection')->delete('setting', [
+                'id' => strtolower(self::LEGACY_USED_TERM_CACHE_SETTING),
+            ]);
+        }
     }
 
     public function uninstall(ServiceLocatorInterface $services): void
@@ -93,7 +105,16 @@ class Module extends AbstractModule
         $settings = $services->get('Omeka\Settings');
         $settings->delete(self::SETTING_RECENTLY_EDITED_SORT);
         $settings->delete(self::SETTING_USED_TERMS_SEARCH);
-        $settings->delete(UsedTermCache::SETTING_KEY);
+        $connection = $services->get('Omeka\Connection');
+        $connection->delete('setting', [
+            'id' => strtolower(self::LEGACY_USED_TERM_CACHE_SETTING),
+        ]);
+        $connection->executeStatement(sprintf(
+            'DROP TABLE IF EXISTS %s',
+            $connection->getDatabasePlatform()->quoteIdentifier(
+                self::USED_TERM_CACHE_TABLE
+            )
+        ));
     }
 
     public function getConfigForm(PhpRenderer $renderer): string
@@ -194,6 +215,23 @@ class Module extends AbstractModule
         $this->getServiceLocator()
             ->get(UsedTermCache::class)
             ->invalidate();
+    }
+
+    private function createUsedTermCacheTable(
+        ServiceLocatorInterface $services
+    ): void {
+        $connection = $services->get('Omeka\Connection');
+        $table = $connection->getDatabasePlatform()
+            ->quoteIdentifier(self::USED_TERM_CACHE_TABLE);
+        $connection->executeStatement(sprintf(<<<'SQL'
+CREATE TABLE IF NOT EXISTS %s (
+    id TINYINT UNSIGNED NOT NULL,
+    cache_value LONGTEXT NOT NULL,
+    PRIMARY KEY (id)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE = InnoDB
+SQL,
+            $table
+        ));
     }
 
     private function featureIsEnabled(string $setting): bool

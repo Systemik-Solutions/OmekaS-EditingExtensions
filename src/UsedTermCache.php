@@ -3,23 +3,20 @@
 namespace EditingExtensions;
 
 use Doctrine\DBAL\Connection;
-use Omeka\Settings\SettingsInterface;
+use RuntimeException;
 
 class UsedTermCache
 {
-    public const SETTING_KEY = 'EditingExtensions_used_term_ids';
+    public const TABLE_NAME = Module::USED_TERM_CACHE_TABLE;
 
     private const CACHE_VERSION = 1;
+    private const CACHE_ROW_ID = 1;
 
     private Connection $connection;
-    private SettingsInterface $settings;
 
-    public function __construct(
-        Connection $connection,
-        SettingsInterface $settings
-    ) {
+    public function __construct(Connection $connection)
+    {
         $this->connection = $connection;
-        $this->settings = $settings;
     }
 
     public function getPropertyIds(): array
@@ -34,15 +31,29 @@ class UsedTermCache
 
     public function invalidate(): void
     {
-        $this->settings->delete(self::SETTING_KEY);
+        // Always hit the database. Omeka settings are cached per process, so
+        // deleting a settings-backed cache can be skipped by a long-running
+        // process whose snapshot predates the cache row.
+        $this->connection->delete(
+            self::TABLE_NAME,
+            ['id' => self::CACHE_ROW_ID]
+        );
     }
 
     private function getCache(): array
     {
-        $cache = $this->settings->get(self::SETTING_KEY);
+        $table = $this->connection->getDatabasePlatform()
+            ->quoteIdentifier(self::TABLE_NAME);
+        $row = $this->connection->executeQuery(
+            sprintf('SELECT cache_value FROM %s WHERE id = ?', $table),
+            [self::CACHE_ROW_ID]
+        )->fetchAssociative();
+        $cache = $row
+            ? json_decode((string) $row['cache_value'], true)
+            : null;
         if (!$this->isValid($cache)) {
             $cache = $this->build();
-            $this->settings->set(self::SETTING_KEY, $cache);
+            $this->store($cache);
         }
 
         return $cache;
@@ -55,6 +66,25 @@ class UsedTermCache
             && isset($cache['properties'], $cache['resource_classes'])
             && is_array($cache['properties'])
             && is_array($cache['resource_classes']);
+    }
+
+    private function store(array $cache): void
+    {
+        $json = json_encode($cache);
+        if ($json === false) {
+            throw new RuntimeException('Could not encode the used-term cache.');
+        }
+
+        $table = $this->connection->getDatabasePlatform()
+            ->quoteIdentifier(self::TABLE_NAME);
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (id, cache_value) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE cache_value = VALUES(cache_value)',
+                $table
+            ),
+            [self::CACHE_ROW_ID, $json]
+        );
     }
 
     private function build(): array
